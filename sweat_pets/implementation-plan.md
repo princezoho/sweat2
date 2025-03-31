@@ -32,13 +32,13 @@ This document outlines the phased implementation plan for the Sweat Pets game, w
    - ✓ Test: Level calculations match specification thresholds
 
 ### Phase 2: Pet Visualization
-5. **Basic Pet Rendering** 🚧
-   - Set up Flame game widget
-   - Create basic pet sprite rendering
-   - Test: Pet appears on screen
-   - Test: Basic animations work
+5. **Basic Pet Rendering** ✓
+   - ✓ Set up Flame game widget
+   - ✓ Create basic pet sprite rendering
+   - ✓ Test: Pet appears on screen
+   - ✓ Test: Basic animations work
 
-6. **Pet Animation States**
+6. **Pet Animation States** 🚧
    - Implement idle animation
    - Add level-specific animations
    - Test: Animations change with evolution level
