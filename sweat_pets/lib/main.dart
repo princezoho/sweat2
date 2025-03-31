@@ -132,13 +132,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                   controller: _tabController,
                   children: [
                     // Health integration tab
-                    HealthStepInput(
-                      onStepsAdded: _addSteps,
+                    SingleChildScrollView(
+                      child: HealthStepInput(
+                        onStepsAdded: _addSteps,
+                      ),
                     ),
                     
                     // Manual input tab
-                    EnhancedStepInput(
-                      onStepsAdded: _addSteps,
+                    SingleChildScrollView(
+                      child: EnhancedStepInput(
+                        onStepsAdded: _addSteps,
+                      ),
                     ),
                   ],
                 ),
