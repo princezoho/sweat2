@@ -1,4 +1,5 @@
 import 'package:flame/game.dart';
+import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'package:sweat_pets/game/pet_sprite.dart';
 import 'package:sweat_pets/models/pet_state.dart';
@@ -11,12 +12,12 @@ class SweatPetGame extends FlameGame {
   /// Pet sprite component
   PetSprite? _petSprite;
   
-  /// Pet background color
-  final Color backgroundColor;
+  /// Pet background color - renamed to avoid conflict with inherited method
+  final Color bgColor;
   
   /// Creates a new SweatPet game instance
   SweatPetGame({
-    this.backgroundColor = const Color(0xFFF0F0F0),
+    this.bgColor = const Color(0xFFF0F0F0),
     PetState? initialState,
   }) {
     _petState = initialState ?? PetState.initial();
@@ -26,8 +27,14 @@ class SweatPetGame extends FlameGame {
   Future<void> onLoad() async {
     await super.onLoad();
     
-    // Set background color
-    camera.backdrop.add(ColorBackground(backgroundColor));
+    // Set background color using a RectangleComponent instead of ColorBackground
+    add(
+      RectangleComponent(
+        size: size,
+        position: Vector2.zero(),
+        paint: Paint()..color = bgColor,
+      ),
+    );
     
     // Create pet sprite
     _petSprite = PetSprite(
@@ -74,28 +81,23 @@ class SweatPetGameWidget extends StatelessWidget {
   
   @override
   Widget build(BuildContext context) {
-    return GameWidget<SweatPetGame>(
-      game: SweatPetGame(
-        initialState: petState,
-        backgroundColor: backgroundColor,
-      ),
+    // Create the game instance
+    final game = SweatPetGame(
+      initialState: petState,
+      bgColor: backgroundColor, // Using our renamed property
+    );
+    
+    // Call the onGameCreated callback if provided
+    if (onGameCreated != null) {
+      onGameCreated!(game);
+    }
+    
+    // Return the game widget with correct parameters
+    return GameWidget(
+      game: game,
       backgroundBuilder: (context) => Container(
         color: backgroundColor,
       ),
-      overlayBuilderMap: const {},
-      initialActiveOverlays: const [],
-      gameFactory: () {
-        final game = SweatPetGame(
-          initialState: petState,
-          backgroundColor: backgroundColor,
-        );
-        
-        if (onGameCreated != null) {
-          onGameCreated!(game);
-        }
-        
-        return game;
-      },
     );
   }
 } 

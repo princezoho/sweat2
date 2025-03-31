@@ -70,6 +70,16 @@ flutter:
     - assets/sweatpet4.png
     - assets/sweatpet5.png
     - assets/sweatpet6.png
+    - assets/sweatpet7.png
+    - assets/images/
+    - assets/images/sweatpet0.png
+    - assets/images/sweatpet1.png
+    - assets/images/sweatpet2.png
+    - assets/images/sweatpet3.png
+    - assets/images/sweatpet4.png
+    - assets/images/sweatpet5.png
+    - assets/images/sweatpet6.png
+    - assets/images/sweatpet7.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
