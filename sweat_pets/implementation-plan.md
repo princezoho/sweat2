@@ -25,14 +25,14 @@ This document outlines the phased implementation plan for the Sweat Pets game, w
    - ✓ Test: Steps persist between app restarts
    - ✓ Test: Daily steps reset every 24 hours
 
-4. **Evolution System** 🚧
-   - Implement both Daily and Average evolution levels
-   - Create level calculation based on step thresholds
-   - Test: Pet correctly evolves/devolves based on steps
-   - Test: Level calculations match specification thresholds
+4. **Evolution System** ✓
+   - ✓ Implement both Daily and Average evolution levels
+   - ✓ Create level calculation based on step thresholds
+   - ✓ Test: Pet correctly evolves/devolves based on steps
+   - ✓ Test: Level calculations match specification thresholds
 
 ### Phase 2: Pet Visualization
-5. **Basic Pet Rendering**
+5. **Basic Pet Rendering** 🚧
    - Set up Flame game widget
    - Create basic pet sprite rendering
    - Test: Pet appears on screen
