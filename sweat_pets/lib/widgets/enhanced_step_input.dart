@@ -1,168 +1,316 @@
 import 'package:flutter/material.dart';
+import '../screens/interface_screen.dart';
 
-/// A custom enhanced steps input widget based on sweatpet-interface1.png design
+/// A widget for manual step input with presets
 class EnhancedStepInput extends StatefulWidget {
   /// Callback when steps are added
-  final Function(int steps) onStepsAdded;
+  final Function(int) onStepsAdded;
 
-  /// Creates a new enhanced step input widget
+  /// Creates an enhanced step input widget
   const EnhancedStepInput({
-    super.key,
+    Key? key,
     required this.onStepsAdded,
-  });
+  }) : super(key: key);
 
   @override
   State<EnhancedStepInput> createState() => _EnhancedStepInputState();
 }
 
 class _EnhancedStepInputState extends State<EnhancedStepInput> {
-  final TextEditingController _controller = TextEditingController();
-  bool _isExpanded = false;
+  bool _showCustomInput = false;
+  final TextEditingController _customStepsController = TextEditingController(text: '1000');
   
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
+  // Preset step values
+  final List<int> _presets = [100, 500, 1000, 2000, 5000, 10000];
   
-  void _submitSteps() {
-    final text = _controller.text;
-    if (text.isEmpty) return;
-    
-    final steps = int.tryParse(text);
-    if (steps != null && steps > 0) {
-      widget.onStepsAdded(steps);
-      _controller.clear();
-      // Collapse the input after submission
-      setState(() {
-        _isExpanded = false;
-      });
-    }
-  }
-  
+  // Activity-based step estimates
+  final Map<String, Map<String, dynamic>> _activities = {
+    'Walking': {
+      'icon': Icons.directions_walk,
+      'color': Colors.blue,
+      'steps': 1500,
+      'description': '15 minutes',
+    },
+    'Running': {
+      'icon': Icons.directions_run,
+      'color': Colors.orange,
+      'steps': 3000,
+      'description': '15 minutes',
+    },
+    'Hiking': {
+      'icon': Icons.terrain,
+      'color': Colors.green,
+      'steps': 5000,
+      'description': '45 minutes',
+    },
+    'Cycling': {
+      'icon': Icons.directions_bike,
+      'color': Colors.red,
+      'steps': 2000,
+      'description': '30 minutes',
+    },
+  };
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+    return SingleChildScrollView(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Main button
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            width: double.infinity,
-            height: 60,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0F0F0),
-              borderRadius: BorderRadius.circular(30),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-              gradient: const LinearGradient(
-                colors: [Color(0xFF9EDBFF), Color(0xFF42C8FF)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          // Title
+          Padding(
+            padding: const EdgeInsets.only(left: 8, bottom: 8, top: 4),
+            child: Text(
+              'Manual Step Entry',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: kTextColor,
               ),
             ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(30),
-                onTap: () {
-                  setState(() {
-                    _isExpanded = !_isExpanded;
-                  });
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Add Steps',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      Icon(
-                        _isExpanded ? Icons.expand_less : Icons.expand_more,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ],
+          ),
+          
+          // Description
+          Padding(
+            padding: const EdgeInsets.only(left: 8, right: 8, bottom: 16),
+            child: Text(
+              'Add steps manually to help your pet grow faster',
+              style: TextStyle(
+                fontSize: 14,
+                color: kTextSecondaryColor,
+              ),
+            ),
+          ),
+          
+          // Quick Add Section
+          Padding(
+            padding: const EdgeInsets.only(left: 8, bottom: 8),
+            child: Text(
+              'Quick Add',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: kTextColor,
+              ),
+            ),
+          ),
+          
+          // Preset buttons grid
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 3,
+            childAspectRatio: 2.5,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            children: _presets.map((steps) {
+              return _buildPresetButton(steps);
+            }).toList(),
+          ),
+          
+          // Custom input button
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _showCustomInput = !_showCustomInput;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: kCardColor,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: kTextSecondaryColor.withOpacity(0.3),
                   ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Custom Steps',
+                      style: TextStyle(
+                        color: kTextColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Icon(
+                      _showCustomInput ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                      color: kTextSecondaryColor,
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
           
-          // Expandable input section
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            height: _isExpanded ? 140 : 0,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: _isExpanded ? [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-              ] : null,
-            ),
-            margin: EdgeInsets.only(top: _isExpanded ? 16 : 0),
-            padding: EdgeInsets.all(_isExpanded ? 16 : 0),
-            child: SingleChildScrollView(
-              physics: const NeverScrollableScrollPhysics(),
+          // Custom input field (conditionally shown)
+          if (_showCustomInput)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: kCardColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   TextField(
-                    controller: _controller,
+                    controller: _customStepsController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Enter steps',
-                      hintText: 'How many steps did you take?',
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    style: TextStyle(color: kTextColor),
+                    decoration: InputDecoration(
+                      labelText: 'Enter custom steps',
+                      labelStyle: TextStyle(color: kTextSecondaryColor),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: kTextSecondaryColor.withOpacity(0.3)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: kAccentColor),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: kBackgroundColor,
                     ),
-                    onSubmitted: (_) => _submitSteps(),
                   ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _submitSteps,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF42C8FF),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () {
+                      final value = int.tryParse(_customStepsController.text);
+                      if (value != null && value > 0) {
+                        widget.onStepsAdded(value);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kAccentColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Text(
-                        'Submit',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      minimumSize: const Size(double.infinity, 45),
                     ),
+                    child: const Text('Add Custom Steps'),
                   ),
                 ],
               ),
             ),
+          
+          // Activity-based section
+          Padding(
+            padding: const EdgeInsets.only(left: 8, top: 16, bottom: 8),
+            child: Text(
+              'Add by Activity',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: kTextColor,
+              ),
+            ),
           ),
+          
+          // Activity tiles
+          ..._activities.entries.map((entry) {
+            return _buildActivityTile(
+              entry.key,
+              entry.value['description'],
+              entry.value['steps'],
+              entry.value['icon'],
+              entry.value['color'],
+            );
+          }).toList(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPresetButton(int steps) {
+    return InkWell(
+      onTap: () {
+        widget.onStepsAdded(steps);
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: kCardColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: kTextSecondaryColor.withOpacity(0.3),
+          ),
+        ),
+        child: Center(
+          child: Text(
+            '+$steps',
+            style: TextStyle(
+              color: kTextColor,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildActivityTile(
+    String activity,
+    String description,
+    int steps,
+    IconData icon,
+    Color color,
+  ) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: kCardColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            icon,
+            color: color,
+            size: 20,
+          ),
+        ),
+        title: Text(
+          activity,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: kTextColor,
+          ),
+        ),
+        subtitle: Text(
+          description,
+          style: TextStyle(
+            color: kTextSecondaryColor,
+            fontSize: 12,
+          ),
+        ),
+        trailing: ElevatedButton(
+          onPressed: () {
+            widget.onStepsAdded(steps);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: kCardColor,
+            foregroundColor: color,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            elevation: 0,
+            side: BorderSide(color: color),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+          child: Text('+$steps', style: TextStyle(fontWeight: FontWeight.bold)),
+        ),
       ),
     );
   }

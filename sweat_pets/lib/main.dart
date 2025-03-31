@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:sweat_pets/game/game_reference.dart';
 import 'package:sweat_pets/game/sweat_pet_game.dart';
 import 'package:sweat_pets/models/pet_state.dart';
+import 'package:sweat_pets/screens/interface_screen.dart';
 import 'package:sweat_pets/widgets/enhanced_step_input.dart';
 import 'package:sweat_pets/widgets/health_step_input.dart';
 import 'package:sweat_pets/widgets/level_up_notification.dart';
@@ -21,6 +23,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const HomePage(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
@@ -37,6 +40,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   PetState _petState = PetState.initial();
   
   /// Game reference for updating
+  GameReference? _gameRef;
+  
+  /// Game instance
   SweatPetGame? _game;
   
   /// Whether to show the level up notification
@@ -47,12 +53,24 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   
   /// Tab controller
   late TabController _tabController;
+  
+  /// Whether to use the new interface
+  bool _useNewInterface = true;
 
   @override
   void initState() {
     super.initState();
     _previousLevel = _petState.currentLevel;
     _tabController = TabController(length: 2, vsync: this);
+    
+    // Set up a demo pet state with some steps for testing
+    _setupDemoPet();
+  }
+  
+  void _setupDemoPet() {
+    // Add some steps to make the demo look better
+    final newState = _petState.addSteps(5000);
+    _petState = newState;
   }
   
   @override
@@ -63,6 +81,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   
   @override
   Widget build(BuildContext context) {
+    // Initialize game and game reference if needed
+    if (_game == null) {
+      _game = SweatPetGame(initialState: _petState);
+      _gameRef = GameReference(_game!);
+    }
+    
+    if (_useNewInterface && _gameRef != null) {
+      return InterfaceScreen(gameRef: _gameRef!);
+    }
+    
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -91,7 +119,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 child: SweatPetGameWidget(
                   petState: _petState,
                   backgroundColor: Colors.lightBlue.shade50,
-                  onGameCreated: (game) => _game = game,
+                  onGameCreated: (game) {
+                    _game = game;
+                    _gameRef = GameReference(game);
+                  },
                 ),
               ),
               

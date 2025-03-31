@@ -14,9 +14,11 @@ class HealthService {
     HealthDataType.DISTANCE_WALKING_RUNNING,
   ];
   
-  /// Permission handler
-  static const List<HealthDataAccess> _permissions = [
-    HealthDataAccess.READ
+  /// Permission handler - must have same length as _types
+  static final List<HealthDataAccess> _permissions = [
+    HealthDataAccess.READ,
+    HealthDataAccess.READ,
+    HealthDataAccess.READ,
   ];
   
   /// Print all available data types for debugging

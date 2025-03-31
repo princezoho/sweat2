@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:sweat_pets/services/health_service.dart';
+import '../services/health_service.dart';
+import '../screens/interface_screen.dart';
 
 /// A widget that fetches step data from health services
 class HealthStepInput extends StatefulWidget {
   /// Callback when steps are fetched and ready to be added
-  final Function(int steps) onStepsAdded;
+  final Function(int) onStepsAdded;
+
+  /// Debug mode
+  final bool debugMode;
 
   /// Creates a health step input widget
   const HealthStepInput({
-    super.key,
+    Key? key,
     required this.onStepsAdded,
-  });
+    this.debugMode = false,
+  }) : super(key: key);
 
   @override
   State<HealthStepInput> createState() => _HealthStepInputState();
@@ -27,7 +32,7 @@ class _HealthStepInputState extends State<HealthStepInput> {
   String? _errorMessage;
   
   /// Today's health metrics
-  int _todaySteps = 0;
+  int _stepsCount = 0;
   int _flightsClimbed = 0;
   double _distanceWalkingRunning = 0.0; // in meters
   
@@ -35,433 +40,344 @@ class _HealthStepInputState extends State<HealthStepInput> {
   bool _hasPermissions = false;
   
   /// Debug mode text controller
-  final TextEditingController _debugStepsController = TextEditingController();
+  final TextEditingController _stepsController = TextEditingController(text: '100');
   
   /// Debug mode toggle
   bool _debugMode = false;
   
+  /// Health connection status
+  String _connectionStatus = 'Not connected';
+  
+  /// Manual steps input
+  int _manualSteps = 100;
+  
   @override
   void initState() {
     super.initState();
-    _checkPermissionsAndFetchData();
+    _debugMode = widget.debugMode;
+    _connectToHealth();
   }
   
   @override
   void dispose() {
-    _debugStepsController.dispose();
+    _stepsController.dispose();
     super.dispose();
   }
   
-  /// Check permissions and fetch data if available
-  Future<void> _checkPermissionsAndFetchData() async {
-    debugPrint('🩺 Checking health permissions on startup');
-    final hasPermissions = await _healthService.hasPermissions();
-    setState(() {
-      _hasPermissions = hasPermissions;
-    });
-    
-    if (hasPermissions) {
-      debugPrint('🩺 Health permissions already granted, fetching data');
-      _fetchHealthData();
-    } else {
-      debugPrint('🩺 No health permissions on startup');
-    }
-  }
-  
-  /// Request health permissions
-  Future<void> _requestPermissions() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-    
-    try {
-      final granted = await _healthService.requestPermissions();
-      setState(() {
-        _hasPermissions = granted;
-        _isLoading = false;
-        if (!granted) {
-          _errorMessage = 'Health permissions were denied';
-        }
-      });
-      
-      if (granted) {
-        _fetchHealthData();
-      }
-    } catch (e) {
-      debugPrint('🩺 Error in _requestPermissions: $e');
-      setState(() {
-        _isLoading = false;
-        _errorMessage = 'Error requesting permissions: $e';
-      });
-    }
-  }
-  
-  /// Fetch health data from health services
-  Future<void> _fetchHealthData() async {
-    if (!_hasPermissions) {
-      debugPrint('🩺 Cannot fetch health data - no permissions');
-      return;
-    }
+  /// Connect to health services
+  Future<void> _connectToHealth() async {
+    if (_isLoading) return;
     
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
+      _connectionStatus = 'Connecting...';
     });
     
-    debugPrint('🩺 Fetching health data...');
     try {
-      // Force permission check again to ensure we have access
-      final hasPermissions = await _healthService.hasPermissions();
+      final hasPermissions = await _healthService.requestPermissions();
       if (!hasPermissions) {
-        debugPrint('🩺 Lost health permissions, requesting again');
-        final granted = await _healthService.requestPermissions();
-        if (!granted) {
-          setState(() {
-            _isLoading = false;
-            _errorMessage = 'Health permissions were denied';
-          });
-          return;
-        }
+        setState(() {
+          _connectionStatus = 'Permission denied';
+          _isLoading = false;
+        });
+        return;
       }
       
       final metrics = await _healthService.getHealthMetricsToday();
-      debugPrint('🩺 Got health metrics: $metrics');
-      
       setState(() {
-        _todaySteps = metrics['steps'] as int;
+        _stepsCount = metrics['steps'] as int;
         _flightsClimbed = metrics['flightsClimbed'] as int;
         _distanceWalkingRunning = metrics['distanceWalkingRunning'] as double;
+        _connectionStatus = 'Connected';
         _isLoading = false;
       });
     } catch (e) {
-      debugPrint('🩺 Error in _fetchHealthData: $e');
       setState(() {
+        _connectionStatus = 'Error: ${e.toString()}';
         _isLoading = false;
-        _errorMessage = 'Error fetching health data: $e';
       });
-    }
-  }
-  
-  /// Add steps to the game
-  void _addStepsToGame() {
-    if (_todaySteps > 0) {
-      widget.onStepsAdded(_todaySteps);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Added $_todaySteps steps to your pet!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    }
-  }
-  
-  /// Format distance in a readable way (convert to km if large enough)
-  String _formatDistance(double meters) {
-    if (meters >= 1000) {
-      return '${(meters / 1000).toStringAsFixed(2)} km';
-    } else {
-      return '${meters.toStringAsFixed(0)} m';
     }
   }
   
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+    return SingleChildScrollView(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Debug mode toggle
+          // Title
+          Padding(
+            padding: const EdgeInsets.only(left: 8, bottom: 12),
+            child: Text(
+              'Health App Integration',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: kTextColor,
+              ),
+            ),
+          ),
+          
+          // Debug Mode Toggle (only in dev)
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              const Text('Debug Mode'),
+              Text(
+                'Debug Mode',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: kTextSecondaryColor,
+                ),
+              ),
               Switch(
                 value: _debugMode,
+                activeColor: kAccentColor,
                 onChanged: (value) {
                   setState(() {
                     _debugMode = value;
-                    if (value && !_hasPermissions) {
-                      _todaySteps = 0;
-                    }
                   });
                 },
               ),
             ],
           ),
           
-          // Health connection card
+          // Health Connection Status Card
           Container(
             width: double.infinity,
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              color: kCardColor,
+              borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
-            padding: const EdgeInsets.all(16),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Health icon and title
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.favorite,
-                        color: Colors.red,
-                        size: 24,
+                    Text(
+                      'Health Connection',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: kTextColor,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    const Expanded(
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor().withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       child: Text(
-                        'Health Integration',
+                        _connectionStatus,
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 12,
                           fontWeight: FontWeight.bold,
+                          color: _getStatusColor(),
                         ),
                       ),
                     ),
                   ],
                 ),
-                
-                const SizedBox(height: 16),
-                
-                // Debug mode input
-                if (_debugMode) ...[
-                  TextField(
-                    controller: _debugStepsController,
-                    decoration: const InputDecoration(
-                      labelText: 'Enter step count',
-                      hintText: 'Enter your actual step count',
-                      border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                Text(
+                  'Connect to Apple Health to automatically track your steps.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: kTextSecondaryColor,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _connectToHealth,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kAccentColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) {
-                      if (value.isNotEmpty) {
-                        setState(() {
-                          _todaySteps = int.tryParse(value) ?? 0;
-                        });
-                      }
-                    },
+                    minimumSize: const Size(double.infinity, 45),
                   ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ElevatedButton(
-                        onPressed: () {
-                          final steps = int.tryParse(_debugStepsController.text) ?? 0;
-                          if (steps > 0) {
-                            setState(() {
-                              _todaySteps = steps;
-                            });
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('Set Steps'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                ] else if (!_hasPermissions) ...[
-                  const Text(
-                    'Connect to Health app to automatically track your steps',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _isLoading ? null : _requestPermissions,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text('Connect to Health'),
-                  ),
-                ] else ...[
-                  // Health data display
-                  Column(
-                    children: [
-                      // Steps
-                      const Text(
-                        'Today\'s Activity',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      
-                      // Health metrics in a card layout
-                      Row(
-                        children: [
-                          // Steps metric
-                          Expanded(
-                            child: _buildMetricCard(
-                              Icons.directions_walk,
-                              'Steps',
-                              _todaySteps.toString(),
-                              Colors.blue,
-                            ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
                           ),
-                          const SizedBox(width: 12),
-                          
-                          // Flights climbed metric
-                          Expanded(
-                            child: _buildMetricCard(
-                              Icons.stairs,
-                              'Flights',
-                              _flightsClimbed.toString(),
-                              Colors.orange,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      
-                      // Distance metric
-                      _buildMetricCard(
-                        Icons.straighten,
-                        'Distance',
-                        _formatDistance(_distanceWalkingRunning),
-                        Colors.green,
-                      ),
-                      
-                      const SizedBox(height: 16),
-                      
-                      // Buttons
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          // Refresh button
-                          ElevatedButton.icon(
-                            onPressed: _isLoading ? null : _fetchHealthData,
-                            icon: _isLoading
-                                ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.blue,
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.refresh),
-                            label: const Text('Refresh'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.grey.shade200,
-                              foregroundColor: Colors.blue,
-                            ),
-                          ),
-                          
-                          // Add steps button
-                          ElevatedButton.icon(
-                            onPressed: _todaySteps > 0 ? _addStepsToGame : null,
-                            icon: const Icon(Icons.add_circle_outline),
-                            label: const Text('Add Steps'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-                
-                // Always show Add Steps button in debug mode
-                if (_debugMode && _todaySteps > 0) ...[
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    onPressed: _addStepsToGame,
-                    icon: const Icon(Icons.add_circle_outline),
-                    label: const Text('Add Steps to Pet'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                    ),
-                  ),
-                ],
-                
-                // Error message
-                if (_errorMessage != null) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    _errorMessage!,
-                    style: const TextStyle(
-                      color: Colors.red,
-                      fontSize: 14,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+                        )
+                      : const Text('Connect to Health'),
+                ),
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          
+          // Add Health Steps Button Card
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: kCardColor,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Today\'s Steps: $_stepsCount',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: kTextColor,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    widget.onStepsAdded(_stepsCount);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kCardColor,
+                    foregroundColor: kAccentColor,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    side: BorderSide(color: kAccentColor),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    minimumSize: const Size(double.infinity, 45),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.add_circle_outline, color: kAccentColor),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Add Health Steps to Pet',
+                        style: TextStyle(
+                          color: kAccentColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Debug Input (only in debug mode)
+          if (_debugMode) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: kCardColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.amber.withOpacity(0.5),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.bug_report,
+                        color: Colors.amber,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Debug Mode',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _stepsController,
+                    keyboardType: TextInputType.number,
+                    style: TextStyle(color: kTextColor),
+                    decoration: InputDecoration(
+                      labelText: 'Enter steps manually',
+                      labelStyle: TextStyle(color: kTextSecondaryColor),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: kTextSecondaryColor.withOpacity(0.3)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: kAccentColor),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: kBackgroundColor,
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _manualSteps = int.tryParse(value) ?? 100;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () {
+                      widget.onStepsAdded(_manualSteps);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.amber,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      minimumSize: const Size(double.infinity, 45),
+                    ),
+                    child: const Text('Add Steps (Debug)'),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
   
-  /// Build a card displaying a health metric
-  Widget _buildMetricCard(IconData icon, String label, String value, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: TextStyle(
-              color: color.withOpacity(0.8),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
+  Color _getStatusColor() {
+    switch (_connectionStatus) {
+      case 'Connected':
+        return Colors.green;
+      case 'Connecting...':
+        return Colors.amber;
+      case 'Not connected':
+        return kTextSecondaryColor;
+      default:
+        return Colors.red;
+    }
   }
 } 
