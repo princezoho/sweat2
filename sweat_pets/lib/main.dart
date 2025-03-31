@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sweat_pets/game/sweat_pet_game.dart';
 import 'package:sweat_pets/models/pet_state.dart';
 import 'package:sweat_pets/widgets/enhanced_step_input.dart';
+import 'package:sweat_pets/widgets/health_step_input.dart';
 import 'package:sweat_pets/widgets/level_up_notification.dart';
 
 void main() {
@@ -31,7 +32,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   /// Current pet state
   PetState _petState = PetState.initial();
   
@@ -43,11 +44,21 @@ class _HomePageState extends State<HomePage> {
   
   /// Previous level before adding steps
   int _previousLevel = 0;
+  
+  /// Tab controller
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
     _previousLevel = _petState.currentLevel;
+    _tabController = TabController(length: 2, vsync: this);
+  }
+  
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
   
   @override
@@ -56,6 +67,19 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text('Sweat Pets'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(
+              icon: Icon(Icons.favorite),
+              text: 'Health',
+            ),
+            Tab(
+              icon: Icon(Icons.edit),
+              text: 'Manual',
+            ),
+          ],
+        ),
       ),
       body: Stack(
         children: [
@@ -101,9 +125,23 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               
-              // Enhanced step input (new design)
-              EnhancedStepInput(
-                onStepsAdded: _addSteps,
+              // Tab views for step input methods
+              Expanded(
+                flex: 2,
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    // Health integration tab
+                    HealthStepInput(
+                      onStepsAdded: _addSteps,
+                    ),
+                    
+                    // Manual input tab
+                    EnhancedStepInput(
+                      onStepsAdded: _addSteps,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
