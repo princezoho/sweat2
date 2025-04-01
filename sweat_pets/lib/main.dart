@@ -1,219 +1,109 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:sweat_pets/game/game_reference.dart';
 import 'package:sweat_pets/game/sweat_pet_game.dart';
 import 'package:sweat_pets/models/pet_state.dart';
 import 'package:sweat_pets/screens/interface_screen.dart';
-import 'package:sweat_pets/widgets/enhanced_step_input.dart';
-import 'package:sweat_pets/widgets/health_step_input.dart';
-import 'package:sweat_pets/widgets/level_up_notification.dart';
+import 'package:sweat_pets/screens/splash_screen.dart';
+import 'package:sweat_pets/models/user_profile.dart';
+import 'package:sweat_pets/models/achievements.dart';
+import 'package:sweat_pets/widgets/achievement_notification.dart';
+import 'package:sweat_pets/screens/profile_screen.dart';
+import 'package:sweat_pets/services/health_service.dart';
 
-void main() {
-  runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Load user profile with error handling
+  UserProfile initialProfile;
+  try {
+    initialProfile = await UserProfile.load();
+  } catch (e) {
+    print('Error loading profile: $e');
+    initialProfile = UserProfile.defaultProfile();
+  }
+  
+  // Set preferred orientations to portrait only for stability
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
+  
+  runApp(MyApp(initialProfile: initialProfile));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
+  final UserProfile initialProfile;
+  
+  const MyApp({
+    Key? key,
+    required this.initialProfile,
+  }) : super(key: key);
+  
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Sweat Pets',
+      title: 'SweatPet',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.dark,
+        ),
         useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFF1E1E1E),
       ),
-      home: const HomePage(),
-      debugShowCheckedModeBanner: false,
+      // Show splash screen first, then handle game initialization in a simpler way
+      home: SplashScreenWrapper(initialProfile: initialProfile),
     );
   }
 }
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
-
+// Simple wrapper to handle transition from splash to main screen
+class SplashScreenWrapper extends StatefulWidget {
+  final UserProfile initialProfile;
+  
+  const SplashScreenWrapper({Key? key, required this.initialProfile}) : super(key: key);
+  
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<SplashScreenWrapper> createState() => _SplashScreenWrapperState();
 }
 
-class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
-  /// Current pet state
-  PetState _petState = PetState.initial();
+class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
+  bool _showSplash = true;
   
-  /// Game reference for updating
-  GameReference? _gameRef;
-  
-  /// Game instance
-  SweatPetGame? _game;
-  
-  /// Whether to show the level up notification
-  bool _showLevelUp = false;
-  
-  /// Previous level before adding steps
-  int _previousLevel = 0;
-  
-  /// Tab controller
-  late TabController _tabController;
-  
-  /// Whether to use the new interface
-  bool _useNewInterface = true;
-
   @override
   void initState() {
     super.initState();
-    _previousLevel = _petState.currentLevel;
-    _tabController = TabController(length: 2, vsync: this);
     
-    // Set up a demo pet state with some steps for testing
-    _setupDemoPet();
+    // Navigate to main screen after a delay
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        _initializeAndNavigate();
+      }
+    });
   }
   
-  void _setupDemoPet() {
-    // Add some steps to make the demo look better
-    final newState = _petState.addSteps(5000);
-    _petState = newState;
-  }
-  
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  void _initializeAndNavigate() {
+    // Get the active pet state or create a default one
+    final activePetState = widget.initialProfile.activePetState ?? PetState.initial();
+    
+    // Initialize game
+    final game = SweatPetGame(initialState: activePetState);
+    final gameRef = GameReference(game);
+    
+    setState(() {
+      _showSplash = false;
+    });
+    
+    // Use Navigator to reduce the chance of build errors
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => InterfaceScreen(gameRef: gameRef),
+      ),
+    );
   }
   
   @override
   Widget build(BuildContext context) {
-    // Initialize game and game reference if needed
-    if (_game == null) {
-      _game = SweatPetGame(initialState: _petState);
-      _gameRef = GameReference(_game!);
-    }
-    
-    if (_useNewInterface && _gameRef != null) {
-      return InterfaceScreen(gameRef: _gameRef!);
-    }
-    
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Sweat Pets'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(
-              icon: Icon(Icons.favorite),
-              text: 'Health',
-            ),
-            Tab(
-              icon: Icon(Icons.edit),
-              text: 'Manual',
-            ),
-          ],
-        ),
-      ),
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              // Game widget (pet display)
-              Expanded(
-                flex: 3,
-                child: SweatPetGameWidget(
-                  petState: _petState,
-                  backgroundColor: Colors.lightBlue.shade50,
-                  onGameCreated: (game) {
-                    _game = game;
-                    _gameRef = GameReference(game);
-                  },
-                ),
-              ),
-              
-              // Stats display
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      'Level: ${_petState.currentLevel}',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Total Steps: ${_petState.totalSteps}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    LinearProgressIndicator(
-                      value: _petState.getProgressToNextLevel(),
-                      minHeight: 10,
-                      backgroundColor: Colors.grey.shade200,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Progress to Level ${_petState.currentLevel + 1}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-              
-              // Tab views for step input methods
-              Expanded(
-                flex: 2,
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    // Health integration tab
-                    SingleChildScrollView(
-                      child: HealthStepInput(
-                        onStepsAdded: _addSteps,
-                      ),
-                    ),
-                    
-                    // Manual input tab
-                    SingleChildScrollView(
-                      child: EnhancedStepInput(
-                        onStepsAdded: _addSteps,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          
-          // Level up notification overlay
-          if (_showLevelUp)
-            Center(
-              child: LevelUpNotification(
-                newLevel: _petState.currentLevel,
-                onDismissed: () {
-                  setState(() {
-                    _showLevelUp = false;
-                  });
-                },
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-  
-  /// Adds steps to the pet
-  void _addSteps(int steps) {
-    // Store current level before update
-    final previousLevel = _petState.currentLevel;
-    
-    setState(() {
-      final newState = _petState.addSteps(steps);
-      _petState = newState;
-      
-      // Update game if available
-      _game?.updatePetState(newState);
-      
-      // Check for level up and show notification
-      if (newState.currentLevel > previousLevel) {
-        _showLevelUp = true;
-      }
-    });
+    return const SplashScreen();
   }
 }

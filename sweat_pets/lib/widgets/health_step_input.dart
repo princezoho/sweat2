@@ -1,20 +1,29 @@
 import 'package:flutter/material.dart';
 import '../services/health_service.dart';
 import '../screens/interface_screen.dart';
+import '../services/profile_service.dart';
+import '../models/user_profile.dart';
+
+// Define UI constants
+const kTextColor = Colors.white;
+const kTextSecondaryColor = Colors.white70;
+const kAccentColor = Color(0xFF8A64FF);
+const kCardColor = Color(0xFF2A2A2A);
+const kProgressTrackColor = Color(0xFF3A3A3A);
 
 /// A widget that fetches step data from health services
 class HealthStepInput extends StatefulWidget {
   /// Callback when steps are fetched and ready to be added
   final Function(int) onStepsAdded;
-
-  /// Debug mode
-  final bool debugMode;
+  
+  /// Current manually added steps to preserve
+  final int currentManualSteps;
 
   /// Creates a health step input widget
   const HealthStepInput({
     Key? key,
     required this.onStepsAdded,
-    this.debugMode = false,
+    this.currentManualSteps = 0,
   }) : super(key: key);
 
   @override
@@ -28,9 +37,6 @@ class _HealthStepInputState extends State<HealthStepInput> {
   /// Loading state
   bool _isLoading = false;
   
-  /// Error message
-  String? _errorMessage;
-  
   /// Today's health metrics
   int _stepsCount = 0;
   int _flightsClimbed = 0;
@@ -39,29 +45,29 @@ class _HealthStepInputState extends State<HealthStepInput> {
   /// Whether permissions are granted
   bool _hasPermissions = false;
   
-  /// Debug mode text controller
-  final TextEditingController _stepsController = TextEditingController(text: '100');
-  
-  /// Debug mode toggle
-  bool _debugMode = false;
-  
   /// Health connection status
   String _connectionStatus = 'Not connected';
   
-  /// Manual steps input
-  int _manualSteps = 100;
+  /// User profile
+  UserProfile? _userProfile;
   
   @override
   void initState() {
     super.initState();
-    _debugMode = widget.debugMode;
+    _loadUserProfile();
     _connectToHealth();
   }
   
-  @override
-  void dispose() {
-    _stepsController.dispose();
-    super.dispose();
+  /// Load user profile
+  Future<void> _loadUserProfile() async {
+    try {
+      final profile = await UserProfile.load();
+      setState(() {
+        _userProfile = profile;
+      });
+    } catch (e) {
+      debugPrint('Error loading user profile: $e');
+    }
   }
   
   /// Connect to health services
@@ -112,7 +118,14 @@ class _HealthStepInputState extends State<HealthStepInput> {
         _isLoading = false;
       });
       
-      // Show a success message if we got steps
+      // Update user profile with new steps if greater than current steps
+      if (_stepsCount > 0 && _userProfile != null) {
+        await applyNewStepsToProfile(_stepsCount);
+        // Reload profile after update
+        _loadUserProfile();
+      }
+      
+      // Only show a success message if we got steps and are not refreshing on startup
       if (_stepsCount > 0) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -151,12 +164,23 @@ class _HealthStepInputState extends State<HealthStepInput> {
     try {
       final metrics = await _healthService.getHealthMetricsToday();
       
+      // Get health steps
+      int healthSteps = metrics['steps'] as int;
+      
       setState(() {
-        _stepsCount = metrics['steps'] as int;
+        _stepsCount = healthSteps;
         _flightsClimbed = metrics['flightsClimbed'] as int;
         _distanceWalkingRunning = metrics['distanceWalkingRunning'] as double;
         _isLoading = false;
       });
+      
+      // Update user profile with new steps if they're higher than current profile steps
+      if (_stepsCount > 0 && _userProfile != null) {
+        // Use the profile service to update steps
+        await applyNewStepsToProfile(_stepsCount);
+        // Reload profile after update
+        _loadUserProfile();
+      }
       
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -199,29 +223,6 @@ class _HealthStepInputState extends State<HealthStepInput> {
                 color: kTextColor,
               ),
             ),
-          ),
-          
-          // Debug Mode Toggle (only in dev)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text(
-                'Debug Mode',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: kTextSecondaryColor,
-                ),
-              ),
-              Switch(
-                value: _debugMode,
-                activeColor: kAccentColor,
-                onChanged: (value) {
-                  setState(() {
-                    _debugMode = value;
-                  });
-                },
-              ),
-            ],
           ),
           
           // Health Connection Status Card
@@ -317,13 +318,21 @@ class _HealthStepInputState extends State<HealthStepInput> {
           ),
           const SizedBox(height: 16),
           
-          // Add Health Steps Button Card
+          // Today's Stats Card - styled like pet bar meter
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: kCardColor,
               borderRadius: BorderRadius.circular(12),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  kCardColor,
+                  kCardColor.withOpacity(0.8),
+                ],
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.2),
@@ -331,6 +340,10 @@ class _HealthStepInputState extends State<HealthStepInput> {
                   offset: const Offset(0, 2),
                 ),
               ],
+              border: Border.all(
+                color: kAccentColor.withOpacity(0.3),
+                width: 1,
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -339,7 +352,7 @@ class _HealthStepInputState extends State<HealthStepInput> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Today\'s Stats',
+                      'Today\'s Activity',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -352,26 +365,255 @@ class _HealthStepInputState extends State<HealthStepInput> {
                         color: kAccentColor,
                       ),
                       onPressed: _isLoading ? null : _refreshHealthData,
+                      tooltip: 'Refresh health data',
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
                 
-                // Stats Rows
-                _buildStatRow('Steps', '$_stepsCount', Icons.directions_walk, Colors.blue),
-                _buildStatRow('Floors', '$_flightsClimbed', Icons.stairs, Colors.orange),
-                _buildStatRow(
-                  'Distance', 
-                  '${(_distanceWalkingRunning / 1000).toStringAsFixed(1)} km', 
-                  Icons.straighten, 
-                  Colors.green
+                // Profile stats section
+                if (_userProfile != null) Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Profile Stats',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: kTextColor,
+                            ),
+                          ),
+                          Text(
+                            'Last sync: ${_formatLastSync()}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: kTextSecondaryColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      
+                      // Total steps
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Total steps:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: kTextColor,
+                            ),
+                          ),
+                          Text(
+                            '${_userProfile!.steps}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: kTextColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      
+                      // Pet level
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Pet Level:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: kTextColor,
+                            ),
+                          ),
+                          Text(
+                            '${_userProfile!.activePetState?.currentLevel ?? 0}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: kAccentColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      // Recent history heading
+                      const SizedBox(height: 12),
+                      if (_userProfile!.history.isNotEmpty) Text(
+                        'Recent History:',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: kTextColor,
+                        ),
+                      ),
+                      
+                      // History list
+                      if (_userProfile!.history.isNotEmpty) 
+                        ..._buildHistoryItems(),
+                    ],
+                  ),
+                ),
+                
+                // Steps progress bar
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.directions_walk, color: Colors.blue, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Steps',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: kTextColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            '$_stepsCount',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: kTextColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      // Progress bar showing steps progress toward daily goal
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: _stepsCount / 10000, // Assuming 10k steps goal
+                          backgroundColor: kProgressTrackColor,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                          minHeight: 8,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Floors progress bar
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.stairs, color: Colors.orange, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Floors',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: kTextColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            '$_flightsClimbed',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: kTextColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: _flightsClimbed / 10, // Assuming 10 floors goal
+                          backgroundColor: kProgressTrackColor,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                          minHeight: 8,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Distance progress bar
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.straighten, color: Colors.green, size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Distance',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: kTextColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            '${(_distanceWalkingRunning / 1000).toStringAsFixed(1)} km',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: kTextColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: _distanceWalkingRunning / 5000, // Assuming 5km goal
+                          backgroundColor: kProgressTrackColor,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                          minHeight: 8,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: _stepsCount > 0 
-                      ? () {
+                      ? () async {
+                          // Update the profile with steps
+                          await applyNewStepsToProfile(_stepsCount);
+                          
+                          // Also call the callback for backward compatibility
                           widget.onStepsAdded(_stepsCount);
+                          
+                          // Reload profile to get updated values
+                          _loadUserProfile();
+                          
+                          if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text('Added $_stepsCount steps to your pet!'),
@@ -422,156 +664,78 @@ class _HealthStepInputState extends State<HealthStepInput> {
               ],
             ),
           ),
-          
-          // Debug Input (only in debug mode)
-          if (_debugMode) ...[
-            const SizedBox(height: 16),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: kCardColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Colors.amber.withOpacity(0.5),
-                  width: 1,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.bug_report,
-                        color: Colors.amber,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Debug Mode',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.amber,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _stepsController,
-                    keyboardType: TextInputType.number,
-                    style: TextStyle(color: kTextColor),
-                    decoration: InputDecoration(
-                      labelText: 'Enter steps manually',
-                      labelStyle: TextStyle(color: kTextSecondaryColor),
-                      enabledBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: kTextSecondaryColor.withOpacity(0.3)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: kAccentColor),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      filled: true,
-                      fillColor: kBackgroundColor,
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        _manualSteps = int.tryParse(value) ?? 100;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () {
-                      widget.onStepsAdded(_manualSteps);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Added $_manualSteps steps to your pet (debug)!'),
-                          backgroundColor: Colors.amber,
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.amber,
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      minimumSize: const Size(double.infinity, 45),
-                    ),
-                    child: const Text('Add Steps (Debug)'),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
   
-  Widget _buildStatRow(String label, String value, IconData icon, Color color) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: kTextSecondaryColor,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  value,
-                  style: TextStyle(
-                    color: kTextColor,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  
+  // Get status color based on connection status
   Color _getStatusColor() {
     switch (_connectionStatus) {
       case 'Connected':
         return Colors.green;
-      case 'Connecting...':
-        return Colors.amber;
-      case 'Not connected':
-        return kTextSecondaryColor;
       case 'Partial connection':
-        return Colors.orange;
-      default:
+        return Colors.amber;
+      case 'Permission denied':
         return Colors.red;
+      case 'Connecting...':
+        return kAccentColor;
+      default:
+        return Colors.grey;
     }
+  }
+  
+  // Helper method to format last sync time
+  String _formatLastSync() {
+    if (_userProfile?.lastSync == null) return 'Never';
+    
+    final now = DateTime.now();
+    final lastSync = _userProfile!.lastSync!;
+    final difference = now.difference(lastSync);
+    
+    if (difference.inMinutes < 1) {
+      return 'Just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inDays}d ago';
+    }
+  }
+  
+  // Build history items list
+  List<Widget> _buildHistoryItems() {
+    // Get up to 5 most recent history entries, newest first
+    final historyItems = _userProfile!.history.reversed.take(5).toList();
+    
+    return historyItems.map((item) {
+      final date = item['date'] as String;
+      final steps = item['steps'] as int;
+      
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              date,
+              style: TextStyle(
+                fontSize: 12,
+                color: kTextSecondaryColor,
+              ),
+            ),
+            Text(
+              '$steps steps',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: kTextColor,
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
   }
 } 

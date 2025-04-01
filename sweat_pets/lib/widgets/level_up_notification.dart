@@ -20,18 +20,20 @@ class LevelUpNotification extends StatefulWidget {
   State<LevelUpNotification> createState() => _LevelUpNotificationState();
 }
 
-class _LevelUpNotificationState extends State<LevelUpNotification> with SingleTickerProviderStateMixin {
+class _LevelUpNotificationState extends State<LevelUpNotification> with TickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   late Animation<double> _opacityAnimation;
+  late Animation<double> _starAnimation;
   
   Timer? _autoDismissTimer;
+  bool _isDismissing = false;
   
   @override
   void initState() {
     super.initState();
     
-    // Setup animations
+    // Setup animations with a single controller
     _controller = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
@@ -50,11 +52,23 @@ class _LevelUpNotificationState extends State<LevelUpNotification> with SingleTi
       curve: const Interval(0.0, 0.5, curve: Curves.easeIn),
     ));
     
+    // Star animation uses the same controller
+    _starAnimation = Tween<double>(
+      begin: 0.8,
+      end: 1.2,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    ));
+    
+    // Start animation once
     _controller.forward();
     
     // Auto-dismiss after 5 seconds
     _autoDismissTimer = Timer(const Duration(seconds: 5), () {
-      _dismiss();
+      if (!_isDismissing && mounted) {
+        _dismiss();
+      }
     });
   }
   
@@ -66,6 +80,13 @@ class _LevelUpNotificationState extends State<LevelUpNotification> with SingleTi
   }
   
   void _dismiss() {
+    if (_isDismissing) return;
+    
+    setState(() {
+      _isDismissing = true;
+    });
+    
+    _controller.stop();
     _controller.reverse().then((_) {
       if (widget.onDismissed != null) {
         widget.onDismissed!();
@@ -75,136 +96,198 @@ class _LevelUpNotificationState extends State<LevelUpNotification> with SingleTi
   
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Opacity(
-          opacity: _opacityAnimation.value,
-          child: Transform.scale(
-            scale: _scaleAnimation.value,
-            child: child,
-          ),
-        );
+    return WillPopScope(
+      onWillPop: () async {
+        _dismiss();
+        return false; // Let the animation finish before popping
       },
-      child: Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        child: Container(
-          width: 300,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF9EDBFF), Color(0xFF18BCFF)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Opacity(
+            opacity: _opacityAnimation.value,
+            child: Transform.scale(
+              scale: _scaleAnimation.value,
+              child: child,
             ),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 15,
-                spreadRadius: 5,
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Confetti icon
-              const Icon(
-                Icons.celebration,
-                color: Colors.yellow,
-                size: 50,
-              ),
-              const SizedBox(height: 16),
-              
-              // Level up text
-              const Text(
-                'LEVEL UP!',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                  letterSpacing: 2,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black26,
-                      blurRadius: 5,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
+          );
+        },
+        child: Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: GestureDetector(
+            onTap: _dismiss,
+            child: Container(
+              width: 300,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF2A2A2A), Color(0xFF1A1A1A)],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
                 ),
-              ),
-              const SizedBox(height: 16),
-              
-              // New level badge
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 8,
-                      spreadRadius: 1,
-                    ),
-                  ],
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: const Color(0xFF38B6FF),
+                  width: 2,
                 ),
-                child: Center(
-                  child: Text(
-                    '${widget.newLevel}',
-                    style: const TextStyle(
-                      fontSize: 40,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF18BCFF),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF38B6FF).withOpacity(0.5),
+                    blurRadius: 15,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Animated stars
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildAnimatedStar(0.0),
+                      _buildAnimatedStar(0.2),
+                      const Icon(
+                        Icons.celebration,
+                        color: Colors.amber,
+                        size: 50,
+                      ),
+                      _buildAnimatedStar(0.2),
+                      _buildAnimatedStar(0.0),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Level up text
+                  ShaderMask(
+                    shaderCallback: (bounds) => const LinearGradient(
+                      colors: [Color(0xFF38B6FF), Color(0xFF4CAF50)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ).createShader(bounds),
+                    child: const Text(
+                      'LEVEL UP!',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 2,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black,
+                            blurRadius: 5,
+                            offset: Offset(0, 3),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              
-              // Congratulations text
-              const Text(
-                'Your pet is getting stronger!',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 24),
-              
-              // Continue button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _dismiss,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF18BCFF),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
+                  const SizedBox(height: 20),
+                  
+                  // New level badge
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF2A2A2A),
+                      border: Border.all(
+                        color: const Color(0xFF38B6FF),
+                        width: 3,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF38B6FF).withOpacity(0.5),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                        ),
+                      ],
                     ),
-                    elevation: 5,
+                    child: Center(
+                      child: Text(
+                        '${widget.newLevel}',
+                        style: const TextStyle(
+                          fontSize: 50,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF38B6FF),
+                        ),
+                      ),
+                    ),
                   ),
-                  child: const Text(
-                    'CONTINUE',
+                  const SizedBox(height: 24),
+                  
+                  // Congratulations text
+                  const Text(
+                    'Your pet has evolved!',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
+                      fontSize: 18,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Keep going to unlock new forms',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFFAAAAAA),
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // Continue button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _dismiss,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF38B6FF),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        elevation: 5,
+                      ),
+                      child: const Text(
+                        'AWESOME!',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildAnimatedStar(double offset) {
+    return AnimatedBuilder(
+      animation: _starAnimation,
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(offset * 40, 0),
+          child: Transform.scale(
+            scale: _starAnimation.value,
+            child: const Icon(
+              Icons.star,
+              color: Colors.amber,
+              size: 28,
+            ),
+          ),
+        );
+      },
     );
   }
 } 

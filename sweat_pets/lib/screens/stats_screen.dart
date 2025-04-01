@@ -228,6 +228,41 @@ class _StatsScreenState extends State<StatsScreen> {
                             dailySteps >= 10000,
                             Icons.directions_run,
                           ),
+                          const Divider(height: 1, color: Color(0xFF3A3A3A)),
+                          _buildAchievementItem(
+                            'Weekly Warrior',
+                            'Maintain 8,000+ average steps for a week',
+                            (widget.gameRef.averageSteps) >= 8000,
+                            Icons.calendar_today,
+                          ),
+                          const Divider(height: 1, color: Color(0xFF3A3A3A)),
+                          _buildAchievementItem(
+                            'Step Master',
+                            'Reach 100,000 total steps',
+                            totalSteps >= 100000,
+                            Icons.military_tech,
+                          ),
+                          const Divider(height: 1, color: Color(0xFF3A3A3A)),
+                          _buildAchievementItem(
+                            'Fully Evolved',
+                            'Get your pet to maximum level',
+                            level >= 7,
+                            Icons.stars,
+                          ),
+                          const Divider(height: 1, color: Color(0xFF3A3A3A)),
+                          _buildAchievementItem(
+                            'Mountain Climber',
+                            'Climb 10 flights of stairs in a day',
+                            _getFlightsClimbed() >= 10,
+                            Icons.stairs,
+                          ),
+                          const Divider(height: 1, color: Color(0xFF3A3A3A)),
+                          _buildAchievementItem(
+                            'Long Distance',
+                            'Walk 5 kilometers in a day',
+                            _getDistanceWalked() >= 5.0,
+                            Icons.straighten,
+                          ),
                         ],
                       ),
                     ),
@@ -594,5 +629,33 @@ class _StatsScreenState extends State<StatsScreen> {
     
     // Refresh screen
     setState(() {});
+  }
+
+  int _getFlightsClimbed() {
+    try {
+      // Attempt to access health data from the game reference if available
+      if (widget.gameRef.currentPet != null) {
+        // In a real implementation, you would access health data from the game reference
+        // This is a placeholder that would be replaced with actual data
+        return 0;
+      }
+      return 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  double _getDistanceWalked() {
+    try {
+      // Attempt to access health data from the game reference if available
+      if (widget.gameRef.currentPet != null) {
+        // In a real implementation, you would access health data from the game reference
+        // This is a placeholder that would be replaced with actual data
+        return 0.0;
+      }
+      return 0.0;
+    } catch (e) {
+      return 0.0;
+    }
   }
 } 
