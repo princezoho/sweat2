@@ -74,6 +74,7 @@ class _HealthStepInputState extends State<HealthStepInput> {
     });
     
     try {
+      // Request permissions first
       final hasPermissions = await _healthService.requestPermissions();
       if (!hasPermissions) {
         setState(() {
@@ -83,6 +84,17 @@ class _HealthStepInputState extends State<HealthStepInput> {
         return;
       }
       
+      // Then double check if we really have permissions
+      final permissionsVerified = await _healthService.hasPermissions();
+      if (!permissionsVerified) {
+        setState(() {
+          _connectionStatus = 'Permission issue';
+          _isLoading = false;
+        });
+        return;
+      }
+      
+      // Get today's steps
       final metrics = await _healthService.getHealthMetricsToday();
       setState(() {
         _stepsCount = metrics['steps'] as int;
@@ -91,11 +103,30 @@ class _HealthStepInputState extends State<HealthStepInput> {
         _connectionStatus = 'Connected';
         _isLoading = false;
       });
+      
+      // Show a success message if we got steps
+      if (_stepsCount > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Successfully connected to Health! Found $_stepsCount steps today.'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e) {
       setState(() {
         _connectionStatus = 'Error: ${e.toString()}';
         _isLoading = false;
       });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error connecting to Health: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
   }
   
@@ -189,7 +220,7 @@ class _HealthStepInputState extends State<HealthStepInput> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Connect to Apple Health to automatically track your steps.',
+                  'Connect to Apple Health to automatically track your steps and feed your pet.',
                   style: TextStyle(
                     fontSize: 14,
                     color: kTextSecondaryColor,
@@ -251,9 +282,18 @@ class _HealthStepInputState extends State<HealthStepInput> {
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: () {
-                    widget.onStepsAdded(_stepsCount);
-                  },
+                  onPressed: _stepsCount > 0 
+                      ? () {
+                          widget.onStepsAdded(_stepsCount);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Added $_stepsCount steps to your pet!'),
+                              backgroundColor: Colors.green,
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: kCardColor,
                     foregroundColor: kAccentColor,
@@ -263,22 +303,35 @@ class _HealthStepInputState extends State<HealthStepInput> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     minimumSize: const Size(double.infinity, 45),
+                    disabledBackgroundColor: kCardColor.withOpacity(0.7),
+                    disabledForegroundColor: kTextSecondaryColor,
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.add_circle_outline, color: kAccentColor),
+                      Icon(Icons.add_circle_outline, color: _stepsCount > 0 ? kAccentColor : kTextSecondaryColor),
                       const SizedBox(width: 8),
                       Text(
                         'Add Health Steps to Pet',
                         style: TextStyle(
-                          color: kAccentColor,
+                          color: _stepsCount > 0 ? kAccentColor : kTextSecondaryColor,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ],
                   ),
                 ),
+                if (_stepsCount == 0 && _connectionStatus == 'Connected')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'No steps recorded today in Health app yet. Try taking a walk!',
+                      style: TextStyle(
+                        color: Colors.amber,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -347,6 +400,13 @@ class _HealthStepInputState extends State<HealthStepInput> {
                   ElevatedButton(
                     onPressed: () {
                       widget.onStepsAdded(_manualSteps);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Added $_manualSteps steps to your pet (debug)!'),
+                          backgroundColor: Colors.amber,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.amber,

@@ -46,8 +46,15 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>NSHealthShareUsageDescription</key>
-	<string>We need access to your health data to count steps and track your progress.</string>
+	<string>We need access to your health data to count steps and track your progress with your SweatPet.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>We need access to your health data to count steps and track your progress.</string>
+	<string>We need access to your health data to count steps and track your progress with your SweatPet.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>We need access to your motion data to accurately track your steps.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
 </dict>
 </plist>

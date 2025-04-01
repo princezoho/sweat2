@@ -33,17 +33,28 @@ class HealthService {
   Future<bool> requestPermissions() async {
     try {
       debugPrint('🩺 Requesting HealthKit permissions...');
+      
+      // Verify that types and permissions are the same length (safety check)
+      if (_types.length != _permissions.length) {
+        debugPrint('🩺 ERROR: Types length (${_types.length}) does not match permissions length (${_permissions.length})');
+        return false;
+      }
+      
       // The permissions parameter IS needed for iOS
       final requested = await _health.requestAuthorization(_types, permissions: _permissions);
       
       debugPrint('🩺 HealthKit permissions result: $requested');
+      
+      // Verify permissions were granted
+      final hasPermission = await _health.hasPermissions(_types, permissions: _permissions) ?? false;
+      debugPrint('🩺 HealthKit permissions verified: $hasPermission');
       
       // Also request activity recognition permission on Android
       if (requested) {
         await Permission.activityRecognition.request();
       }
       
-      return requested;
+      return requested && hasPermission;
     } catch (e) {
       debugPrint('🩺 Error requesting health permissions: $e');
       return false;
@@ -53,6 +64,12 @@ class HealthService {
   /// Check if permissions are granted
   Future<bool> hasPermissions() async {
     try {
+      // Verify that types and permissions are the same length (safety check)
+      if (_types.length != _permissions.length) {
+        debugPrint('🩺 ERROR: Types length (${_types.length}) does not match permissions length (${_permissions.length})');
+        return false;
+      }
+      
       // The permissions parameter IS needed for iOS
       final hasPermission = await _health.hasPermissions(_types, permissions: _permissions) ?? false;
       debugPrint('🩺 HealthKit permissions status: $hasPermission');
@@ -80,7 +97,7 @@ class HealthService {
     };
     
     try {
-      // Check permissions
+      // Check permissions and request if needed
       final hasPermission = await hasPermissions();
       if (!hasPermission) {
         debugPrint('🩺 No health permissions, requesting...');
@@ -92,10 +109,14 @@ class HealthService {
       }
       
       // Get steps using the specialized method for better accuracy
-      final steps = await _health.getTotalStepsInInterval(start, end);
-      if (steps != null && steps > 0) {
-        metrics['steps'] = steps.toInt();
-        debugPrint('🩺 Steps from getTotalStepsInInterval: ${steps.toInt()}');
+      try {
+        final steps = await _health.getTotalStepsInInterval(start, end);
+        if (steps != null && steps > 0) {
+          metrics['steps'] = steps.toInt();
+          debugPrint('🩺 Steps from getTotalStepsInInterval: ${steps.toInt()}');
+        }
+      } catch (e) {
+        debugPrint('🩺 Error getting total steps: $e - will try with individual data points');
       }
       
       // Get all health data
