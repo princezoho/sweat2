@@ -74,57 +74,109 @@ class _HealthStepInputState extends State<HealthStepInput> {
     });
     
     try {
-      // Request permissions first
-      final hasPermissions = await _healthService.requestPermissions();
-      if (!hasPermissions) {
-        setState(() {
-          _connectionStatus = 'Permission denied';
-          _isLoading = false;
-        });
-        return;
+      // First, check if we already have permissions
+      _hasPermissions = await _healthService.hasPermissions();
+      
+      if (!_hasPermissions) {
+        // If we don't have permissions, request them
+        debugPrint('🩺 No health permissions, requesting...');
+        
+        // Request permissions with a button click listener
+        final permissionGranted = await _healthService.requestPermissions();
+        
+        if (!permissionGranted) {
+          setState(() {
+            _connectionStatus = 'Permission denied';
+            _isLoading = false;
+            _hasPermissions = false;
+          });
+          return;
+        }
+        
+        // Double-check permissions after request
+        _hasPermissions = await _healthService.hasPermissions();
+        if (!_hasPermissions) {
+          debugPrint('🩺 Permission request succeeded but permissions check failed');
+          // We'll continue anyway in case we can still get data
+        }
       }
       
-      // Then double check if we really have permissions
-      final permissionsVerified = await _healthService.hasPermissions();
-      if (!permissionsVerified) {
-        setState(() {
-          _connectionStatus = 'Permission issue';
-          _isLoading = false;
-        });
-        return;
-      }
-      
-      // Get today's steps
+      // Try to fetch health data
       final metrics = await _healthService.getHealthMetricsToday();
+      
       setState(() {
         _stepsCount = metrics['steps'] as int;
         _flightsClimbed = metrics['flightsClimbed'] as int;
         _distanceWalkingRunning = metrics['distanceWalkingRunning'] as double;
-        _connectionStatus = 'Connected';
+        _connectionStatus = _hasPermissions ? 'Connected' : 'Partial connection';
         _isLoading = false;
       });
       
       // Show a success message if we got steps
       if (_stepsCount > 0) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Successfully connected to Health! Found $_stepsCount steps today.'),
+            content: Text('Found $_stepsCount steps today from Health app!'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
         );
       }
     } catch (e) {
+      debugPrint('🩺 Error in health connection: $e');
       setState(() {
         _connectionStatus = 'Error: ${e.toString()}';
         _isLoading = false;
       });
       
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error connecting to Health: ${e.toString()}'),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+  
+  Future<void> _refreshHealthData() async {
+    if (_isLoading) return;
+    
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      final metrics = await _healthService.getHealthMetricsToday();
+      
+      setState(() {
+        _stepsCount = metrics['steps'] as int;
+        _flightsClimbed = metrics['flightsClimbed'] as int;
+        _distanceWalkingRunning = metrics['distanceWalkingRunning'] as double;
+        _isLoading = false;
+      });
+      
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Health data refreshed: $_stepsCount steps'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error refreshing health data'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 2),
         ),
       );
     }
@@ -249,6 +301,17 @@ class _HealthStepInputState extends State<HealthStepInput> {
                         )
                       : const Text('Connect to Health'),
                 ),
+                if (_connectionStatus == 'Permission denied')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Please go to Settings > Privacy & Health > Health > SweatPet to enable permissions',
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -272,14 +335,38 @@ class _HealthStepInputState extends State<HealthStepInput> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Today\'s Steps: $_stepsCount',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: kTextColor,
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Today\'s Stats',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: kTextColor,
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        Icons.refresh,
+                        color: kAccentColor,
+                      ),
+                      onPressed: _isLoading ? null : _refreshHealthData,
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 8),
+                
+                // Stats Rows
+                _buildStatRow('Steps', '$_stepsCount', Icons.directions_walk, Colors.blue),
+                _buildStatRow('Floors', '$_flightsClimbed', Icons.stairs, Colors.orange),
+                _buildStatRow(
+                  'Distance', 
+                  '${(_distanceWalkingRunning / 1000).toStringAsFixed(1)} km', 
+                  Icons.straighten, 
+                  Colors.green
+                ),
+                
                 const SizedBox(height: 16),
                 ElevatedButton(
                   onPressed: _stepsCount > 0 
@@ -428,6 +515,51 @@ class _HealthStepInputState extends State<HealthStepInput> {
     );
   }
   
+  Widget _buildStatRow(String label, String value, IconData icon, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: kTextSecondaryColor,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: kTextColor,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
   Color _getStatusColor() {
     switch (_connectionStatus) {
       case 'Connected':
@@ -436,6 +568,8 @@ class _HealthStepInputState extends State<HealthStepInput> {
         return Colors.amber;
       case 'Not connected':
         return kTextSecondaryColor;
+      case 'Partial connection':
+        return Colors.orange;
       default:
         return Colors.red;
     }

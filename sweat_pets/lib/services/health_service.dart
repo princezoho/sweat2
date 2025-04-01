@@ -40,21 +40,32 @@ class HealthService {
         return false;
       }
       
-      // The permissions parameter IS needed for iOS
+      // Request permissions for all types at once
       final requested = await _health.requestAuthorization(_types, permissions: _permissions);
-      
       debugPrint('🩺 HealthKit permissions result: $requested');
+      
+      if (requested) {
+        // Explicitly request each type individually to ensure proper permissions
+        for (int i = 0; i < _types.length; i++) {
+          final type = _types[i];
+          final permission = _permissions[i];
+          
+          debugPrint('🩺 Requesting specific permission for $type');
+          await _health.requestAuthorization([type], permissions: [permission]);
+        }
+        
+        // Also request activity recognition permission on Android
+        await Permission.activityRecognition.request();
+        
+        // Give the system a moment to process the permissions
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
       
       // Verify permissions were granted
       final hasPermission = await _health.hasPermissions(_types, permissions: _permissions) ?? false;
       debugPrint('🩺 HealthKit permissions verified: $hasPermission');
       
-      // Also request activity recognition permission on Android
-      if (requested) {
-        await Permission.activityRecognition.request();
-      }
-      
-      return requested && hasPermission;
+      return requested;
     } catch (e) {
       debugPrint('🩺 Error requesting health permissions: $e');
       return false;
@@ -98,13 +109,20 @@ class HealthService {
     
     try {
       // Check permissions and request if needed
-      final hasPermission = await hasPermissions();
+      var hasPermission = await hasPermissions();
       if (!hasPermission) {
         debugPrint('🩺 No health permissions, requesting...');
         final granted = await requestPermissions();
         if (!granted) {
           debugPrint('🩺 Health permissions denied');
           return metrics;
+        }
+        
+        // Double-check permissions after request
+        hasPermission = await hasPermissions();
+        if (!hasPermission) {
+          debugPrint('🩺 Still no health permissions after request');
+          // Continue anyway as the data fetch might still work
         }
       }
       
@@ -114,6 +132,8 @@ class HealthService {
         if (steps != null && steps > 0) {
           metrics['steps'] = steps.toInt();
           debugPrint('🩺 Steps from getTotalStepsInInterval: ${steps.toInt()}');
+        } else {
+          debugPrint('🩺 No steps returned from getTotalStepsInInterval');
         }
       } catch (e) {
         debugPrint('🩺 Error getting total steps: $e - will try with individual data points');
@@ -124,7 +144,9 @@ class HealthService {
       final data = await _health.getHealthDataFromTypes(start, end, _types);
       
       // Process each data point
+      int dataPointCount = 0;
       for (var point in data) {
+        dataPointCount++;
         debugPrint('🩺 Health data point: ${point.type}, ${point.value}');
         if (point.value is NumericHealthValue) {
           final numValue = point.value as NumericHealthValue;
@@ -149,6 +171,7 @@ class HealthService {
         }
       }
       
+      debugPrint('🩺 Processed $dataPointCount health data points');
       debugPrint('🩺 Health metrics for period: $metrics');
       return metrics;
     } catch (e) {
