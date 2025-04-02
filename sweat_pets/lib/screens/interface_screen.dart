@@ -14,6 +14,7 @@ import '../screens/profile_screen.dart';
 import '../screens/pet_selection_screen.dart';
 import '../models/pet.dart';
 import '../models/pet_collection.dart';
+import 'package:sweat_pets/services/app_settings.dart';
 
 // Dark theme colors
 const Color kBackgroundColor = Color(0xFF1E1E1E); // Charcoal gray
@@ -162,6 +163,16 @@ class _InterfaceScreenState extends State<InterfaceScreen> with SingleTickerProv
       _isConnectingToHealth = true;
     });
     
+    // Check if we're in offline mode
+    if (AppSettings.offlineMode) {
+      setState(() {
+        _isConnectingToHealth = false;
+        _healthConnected = false;
+        _connectionStatus = 'Offline Mode';
+      });
+      return;
+    }
+    
     try {
       // Make sure user profile is loaded
       if (_userProfile == null) {
@@ -185,6 +196,17 @@ class _InterfaceScreenState extends State<InterfaceScreen> with SingleTickerProv
       // Get health data
       final healthData = await _healthService.getHealthMetricsToday();
       int steps = healthData['steps'] as int;
+      
+      // Check if data is marked as offline
+      final isOffline = healthData['isOffline'] as bool? ?? false;
+      if (isOffline) {
+        setState(() {
+          _isConnectingToHealth = false;
+          _healthConnected = false;
+          _connectionStatus = 'Offline Mode';
+        });
+        return;
+      }
       
       // If steps are greater than 0, we consider health connected regardless of permissions check
       // This is because the permissions check sometimes fails even when we can get data
@@ -972,6 +994,91 @@ class _InterfaceScreenState extends State<InterfaceScreen> with SingleTickerProv
                             ),
                           ),
                           
+                          // Settings Section
+                          Container(
+                            width: size.width * 0.9,
+                            margin: const EdgeInsets.only(top: 16, bottom: 16),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: kCardColor,
+                              borderRadius: BorderRadius.circular(12),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  kCardColor,
+                                  kCardColor.withOpacity(0.8),
+                                ],
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.2),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                              border: Border.all(
+                                color: kAccentColor.withOpacity(0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Settings',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: kTextColor,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Offline Mode',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: kTextColor,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Use app without Health data',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: kTextSecondaryColor,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Status: $_connectionStatus',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: _connectionStatus == 'Offline Mode' ? Colors.blue : 
+                                                  _connectionStatus == 'Connected' ? Colors.green : 
+                                                  _connectionStatus == 'Partial connection' ? Colors.orange : Colors.red,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Switch(
+                                      value: AppSettings.offlineMode,
+                                      onChanged: _toggleOfflineMode,
+                                      activeColor: kAccentColor,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          
                           // Bottom padding to ensure content doesn't get hidden
                           SizedBox(height: 16),
                         ],
@@ -1554,6 +1661,106 @@ class _InterfaceScreenState extends State<InterfaceScreen> with SingleTickerProv
           debugPrint("UI rebuild triggered");
         });
       }
+    }
+  }
+
+  /// Build settings section
+  Widget _buildSettingsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Offline mode toggle
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16.0),
+          child: Card(
+            color: kCardColor,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16.0),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Offline Mode',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: kTextColor,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Enable to use the app without Health data',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: kTextSecondaryColor,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Status: $_connectionStatus',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: _connectionStatus == 'Offline Mode' ? Colors.blue : 
+                                     _connectionStatus == 'Connected' ? Colors.green : 
+                                     _connectionStatus == 'Partial connection' ? Colors.orange : Colors.red,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Switch(
+                        value: AppSettings.offlineMode,
+                        onChanged: _toggleOfflineMode,
+                        activeColor: kAccentColor,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+  
+  /// Toggle offline mode
+  Future<void> _toggleOfflineMode(bool value) async {
+    await AppSettings.setOfflineMode(value);
+    
+    setState(() {
+      if (value) {
+        _connectionStatus = 'Offline Mode';
+        _healthConnected = false;
+      } else {
+        _connectionStatus = 'Connecting...';
+        _isConnectingToHealth = true;
+      }
+    });
+    
+    if (!value) {
+      // If switching to online mode, try to connect
+      await _connectToHealthKit();
+    }
+    
+    // Show a snackbar to confirm the change
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(value ? 'Offline mode enabled' : 'Online mode enabled'),
+          backgroundColor: value ? Colors.blue : Colors.green,
+          duration: const Duration(seconds: 1),
+        ),
+      );
     }
   }
 }

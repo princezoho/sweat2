@@ -1,6 +1,7 @@
 import 'package:health/health.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:sweat_pets/services/app_settings.dart';
 
 /// Service that handles health data retrieval
 class HealthService {
@@ -93,6 +94,16 @@ class HealthService {
   
   /// Get all health metrics for today
   Future<Map<String, dynamic>> getHealthMetricsToday() async {
+    // If in offline mode, return empty metrics
+    if (AppSettings.offlineMode) {
+      return {
+        'steps': 0,
+        'flightsClimbed': 0,
+        'distanceWalkingRunning': 0.0,
+        'isOffline': true
+      };
+    }
+    
     final now = DateTime.now();
     final midnight = DateTime(now.year, now.month, now.day);
     
@@ -105,7 +116,14 @@ class HealthService {
       'steps': 0,
       'flightsClimbed': 0,
       'distanceWalkingRunning': 0.0,
+      'isOffline': false
     };
+    
+    // If in offline mode, return empty metrics
+    if (AppSettings.offlineMode) {
+      metrics['isOffline'] = true;
+      return metrics;
+    }
     
     try {
       // Check permissions and request if needed
@@ -173,9 +191,14 @@ class HealthService {
       
       debugPrint('🩺 Processed $dataPointCount health data points');
       debugPrint('🩺 Health metrics for period: $metrics');
+      
+      // Return the metrics, explicitly marking as not offline
+      metrics['isOffline'] = false;
       return metrics;
     } catch (e) {
       debugPrint('🩺 Error getting health metrics: $e');
+      // On error, mark as offline but still return the empty metrics
+      metrics['isOffline'] = true;
       return metrics;
     }
   }

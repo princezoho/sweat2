@@ -3,6 +3,7 @@ import '../services/health_service.dart';
 import '../screens/interface_screen.dart';
 import '../services/profile_service.dart';
 import '../models/user_profile.dart';
+import '../services/app_settings.dart';
 
 // Define UI constants
 const kTextColor = Colors.white;
@@ -51,11 +52,19 @@ class _HealthStepInputState extends State<HealthStepInput> {
   /// User profile
   UserProfile? _userProfile;
   
+  /// Whether we're in offline mode
+  bool _isOfflineMode = false;
+  
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
-    _connectToHealth();
+    _checkOfflineMode();
+    if (!_isOfflineMode) {
+      _connectToHealth();
+    } else {
+      _connectionStatus = 'Offline Mode';
+    }
   }
   
   /// Load user profile
@@ -70,9 +79,41 @@ class _HealthStepInputState extends State<HealthStepInput> {
     }
   }
   
+  /// Check if we're in offline mode
+  Future<void> _checkOfflineMode() async {
+    await AppSettings.init(); // Make sure settings are initialized
+    setState(() {
+      _isOfflineMode = AppSettings.offlineMode;
+    });
+  }
+  
+  /// Toggle offline mode
+  Future<void> _toggleOfflineMode() async {
+    final newOfflineMode = await AppSettings.toggleOfflineMode();
+    
+    setState(() {
+      _isOfflineMode = newOfflineMode;
+      _connectionStatus = newOfflineMode ? 'Offline Mode' : 'Connecting...';
+    });
+    
+    if (!newOfflineMode) {
+      // If switching to online mode, try to connect
+      await _connectToHealth();
+    } else {
+      // If switching to offline mode, update UI only
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Offline mode enabled'),
+          backgroundColor: Colors.blue,
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+  
   /// Connect to health services
   Future<void> _connectToHealth() async {
-    if (_isLoading) return;
+    if (_isLoading || _isOfflineMode) return;
     
     setState(() {
       _isLoading = true;
@@ -114,7 +155,16 @@ class _HealthStepInputState extends State<HealthStepInput> {
         _stepsCount = metrics['steps'] as int;
         _flightsClimbed = metrics['flightsClimbed'] as int;
         _distanceWalkingRunning = metrics['distanceWalkingRunning'] as double;
-        _connectionStatus = _hasPermissions ? 'Connected' : 'Partial connection';
+        
+        // Check if the data is marked as offline
+        final isOffline = metrics['isOffline'] as bool? ?? false;
+        
+        if (isOffline) {
+          _connectionStatus = 'Offline Mode';
+        } else {
+          _connectionStatus = _hasPermissions ? 'Connected' : 'Partial connection';
+        }
+        
         _isLoading = false;
       });
       
@@ -662,6 +712,41 @@ class _HealthStepInputState extends State<HealthStepInput> {
                     ),
                   ),
               ],
+            ),
+          ),
+          
+          // Offline mode toggle
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Offline Mode:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                Switch(
+                  value: _isOfflineMode,
+                  onChanged: (value) {
+                    _toggleOfflineMode();
+                  },
+                  activeColor: Colors.blue,
+                ),
+              ],
+            ),
+          ),
+          
+          Text(
+            'Status: $_connectionStatus',
+            style: TextStyle(
+              fontSize: 14,
+              color: _isOfflineMode ? Colors.blue : 
+                     _connectionStatus == 'Connected' ? Colors.green : 
+                     _connectionStatus == 'Partial connection' ? Colors.orange : Colors.red,
             ),
           ),
         ],

@@ -10,9 +10,13 @@ import 'package:sweat_pets/models/achievements.dart';
 import 'package:sweat_pets/widgets/achievement_notification.dart';
 import 'package:sweat_pets/screens/profile_screen.dart';
 import 'package:sweat_pets/services/health_service.dart';
+import 'package:sweat_pets/services/app_settings.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize app settings
+  await AppSettings.init();
   
   // Load user profile with error handling
   UserProfile initialProfile;
