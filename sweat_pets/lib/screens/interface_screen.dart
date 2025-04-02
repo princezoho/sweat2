@@ -159,6 +159,9 @@ class _InterfaceScreenState extends State<InterfaceScreen> with SingleTickerProv
   
   /// Connect to HealthKit to fetch live data
   Future<void> _connectToHealthKit() async {
+    // Don't try to connect again if already trying
+    if (_isConnectingToHealth) return;
+    
     setState(() {
       _isConnectingToHealth = true;
     });
@@ -173,28 +176,84 @@ class _InterfaceScreenState extends State<InterfaceScreen> with SingleTickerProv
       return;
     }
     
+    // Add a timeout to make sure we don't block the UI
     try {
-      // Make sure user profile is loaded
-      if (_userProfile == null) {
-        await _loadUserProfile();
-      }
-      
-      // Request permissions
-      final hasPermissions = await _healthService.hasPermissions();
-      if (!hasPermissions) {
-        final granted = await _healthService.requestPermissions();
-        if (!granted) {
+      // Use a non-blocking timeout
+      bool timeoutOccurred = false;
+      Future.delayed(const Duration(seconds: 8), () {
+        if (_isConnectingToHealth) {
+          timeoutOccurred = true;
           setState(() {
             _isConnectingToHealth = false;
             _healthConnected = false;
-            _connectionStatus = 'Permission denied';
+            _connectionStatus = 'Connection timed out';
           });
-          return;
+          // Switch to offline mode on timeout
+          AppSettings.setOfflineMode(true);
+        }
+      });
+
+      // Make sure user profile is loaded
+      if (_userProfile == null) {
+        try {
+          await _loadUserProfile();
+        } catch (e) {
+          debugPrint('Error loading user profile: $e');
+          // Continue anyway, might work without it
         }
       }
       
+      // If we've already hit timeout, don't continue
+      if (timeoutOccurred) return;
+      
+      // Request permissions
+      bool hasPermissions = false;
+      try {
+        hasPermissions = await _healthService.hasPermissions();
+        if (!hasPermissions) {
+          bool granted = false;
+          try {
+            granted = await _healthService.requestPermissions();
+          } catch (e) {
+            debugPrint('Error requesting health permissions: $e');
+            granted = false;
+          }
+          
+          if (!granted) {
+            setState(() {
+              _isConnectingToHealth = false;
+              _healthConnected = false;
+              _connectionStatus = 'Permission denied';
+            });
+            return;
+          }
+        }
+      } catch (e) {
+        debugPrint('Error checking health permissions: $e');
+        // Continue anyway, might work without it
+      }
+      
+      // If we've already hit timeout, don't continue
+      if (timeoutOccurred) return;
+      
       // Get health data
-      final healthData = await _healthService.getHealthMetricsToday();
+      Map<String, dynamic> healthData = {
+        'steps': 0,
+        'flightsClimbed': 0,
+        'distanceWalkingRunning': 0.0,
+        'isOffline': true
+      };
+      
+      try {
+        healthData = await _healthService.getHealthMetricsToday();
+      } catch (e) {
+        debugPrint('Error getting health metrics: $e');
+        // Continue with default values
+      }
+      
+      // If we've already hit timeout, don't update UI
+      if (timeoutOccurred) return;
+      
       int steps = healthData['steps'] as int;
       
       // Check if data is marked as offline
@@ -213,7 +272,14 @@ class _InterfaceScreenState extends State<InterfaceScreen> with SingleTickerProv
       final bool dataReceived = steps > 0;
       
       // Get weekly data for average
-      final weeklyData = await _healthService.getStepsForPastWeek();
+      Map<DateTime, int> weeklyData = {};
+      try {
+        weeklyData = await _healthService.getStepsForPastWeek();
+      } catch (e) {
+        debugPrint('Error getting weekly steps: $e');
+        // Continue with empty data
+      }
+      
       double averageSteps = 0;
       if (weeklyData.isNotEmpty) {
         int totalSteps = 0;
@@ -228,37 +294,45 @@ class _InterfaceScreenState extends State<InterfaceScreen> with SingleTickerProv
       
       // Update the pet state with real health data - BUT AVOID DUPLICATING STEPS
       if (_userProfile != null && widget.gameRef.currentPet != null) {
-        // Get current state
-        final currentState = widget.gameRef.currentPet!;
-        
-        // IMPORTANT: Reset the daily steps first to avoid duplication
-        // This makes sure we're not adding to existing steps but replacing them
-        PetState resetState = currentState.resetDailySteps();
-        
-        // Now add the health steps to the reset state
-        // Since we reset first, this won't duplicate steps
-        if (steps > 0) {
-          // Add steps to the reset state (not duplicating because we reset first)
-          PetState newState = resetState.addSteps(steps);
+        try {
+          // Get current state
+          final currentState = widget.gameRef.currentPet!;
           
-          // Update the game
-          widget.gameRef.updatePetState(newState);
+          // IMPORTANT: Reset the daily steps first to avoid duplication
+          // This makes sure we're not adding to existing steps but replacing them
+          PetState resetState = currentState.resetDailySteps();
           
-          // Also update the profile
-          if (_userProfile!.petStates.containsKey(_userProfile!.activePetId)) {
-            _userProfile!.petStates[_userProfile!.activePetId] = newState;
-            await _userProfile!.save();
+          // Now add the health steps to the reset state
+          // Since we reset first, this won't duplicate steps
+          if (steps > 0) {
+            // Add steps to the reset state (not duplicating because we reset first)
+            PetState newState = resetState.addSteps(steps);
+            
+            // Update the game
+            widget.gameRef.updatePetState(newState);
+            
+            // Also update the profile
+            if (_userProfile!.petStates.containsKey(_userProfile!.activePetId)) {
+              _userProfile!.petStates[_userProfile!.activePetId] = newState;
+              await _userProfile!.save();
+            }
+          } else {
+            // Even if no steps, update with the reset state
+            widget.gameRef.updatePetState(resetState);
+            
+            if (_userProfile!.petStates.containsKey(_userProfile!.activePetId)) {
+              _userProfile!.petStates[_userProfile!.activePetId] = resetState;
+              await _userProfile!.save();
+            }
           }
-        } else {
-          // Even if no steps, update with the reset state
-          widget.gameRef.updatePetState(resetState);
-          
-          if (_userProfile!.petStates.containsKey(_userProfile!.activePetId)) {
-            _userProfile!.petStates[_userProfile!.activePetId] = resetState;
-            await _userProfile!.save();
-          }
+        } catch (e) {
+          debugPrint('Error updating pet state: $e');
+          // Continue anyway, UI will still show
         }
       }
+      
+      // If we've already hit timeout, don't update UI
+      if (timeoutOccurred) return;
       
       setState(() {
         _isConnectingToHealth = false;
@@ -272,6 +346,9 @@ class _InterfaceScreenState extends State<InterfaceScreen> with SingleTickerProv
         _healthConnected = false;
         _connectionStatus = 'Connection error';
       });
+      
+      // Switch to offline mode on error
+      AppSettings.setOfflineMode(true);
     }
   }
 

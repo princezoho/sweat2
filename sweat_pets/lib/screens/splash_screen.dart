@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../screens/interface_screen.dart';
+import '../models/pet_state.dart';
+import '../game/sweat_pet_game.dart';
+import '../game/game_reference.dart';
 
 // Define UI constants
 const kBackgroundColor = Color(0xFF1E1E1E);
@@ -31,6 +34,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   // Current pet level to show (animated)
   int _currentPetIndex = 0;
   Timer? _petAnimationTimer;
+  Timer? _navigationTimer;
+  Timer? _forceNavigationTimer;
   
   // Available pet images (0-7)
   final int _maxPetIndex = 7;
@@ -68,14 +73,24 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     
     // Navigate to main interface after delay
     if (widget.onComplete != null) {
-      Timer(const Duration(seconds: 3), widget.onComplete!);
+      _navigationTimer = Timer(const Duration(seconds: 3), widget.onComplete!);
     }
+    
+    // Force navigation after max wait time (in case onComplete callback fails)
+    _forceNavigationTimer = Timer(const Duration(seconds: 6), () {
+      if (mounted && Navigator.canPop(context)) {
+        debugPrint('⏱️ Force navigating away from splash screen after timeout');
+        _forceNavigateToMainScreen();
+      }
+    });
   }
   
   @override
   void dispose() {
     _controller.dispose();
     _petAnimationTimer?.cancel();
+    _navigationTimer?.cancel();
+    _forceNavigationTimer?.cancel();
     super.dispose();
   }
   
@@ -88,12 +103,39 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     });
   }
   
+  void _forceNavigateToMainScreen() {
+    try {
+      // Create a default state and force navigate
+      final defaultState = PetState.initial();
+      final game = SweatPetGame(initialState: defaultState);
+      final gameRef = GameReference(game);
+      
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => InterfaceScreen(gameRef: gameRef),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error during force navigation: $e');
+      // Even if this fails, the app won't be stuck on the splash screen
+      // as the user can restart the app
+    }
+  }
+  
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     
     return Scaffold(
       backgroundColor: kBackgroundColor,
+      // Add a button to manually navigate if all else fails
+      floatingActionButton: FloatingActionButton(
+        onPressed: _forceNavigateToMainScreen,
+        mini: true,
+        backgroundColor: Colors.black.withOpacity(0.5),
+        child: Icon(Icons.arrow_forward, color: kAccentColor),
+      ),
       body: Stack(
         children: [
           // Background with gradient

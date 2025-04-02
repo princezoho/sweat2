@@ -22,16 +22,21 @@ class HealthService {
     HealthDataAccess.READ,
   ];
   
-  /// Print all available data types for debugging
+  /// Print available data types for debugging
   void printAvailableTypes() {
-    debugPrint('🩺 Available HealthDataTypes:');
-    for (final field in HealthDataType.values) {
-      debugPrint('🩺 - $field');
+    try {
+      debugPrint('🩺 Available HealthDataTypes:');
+      for (final field in HealthDataType.values) {
+        debugPrint('🩺 - $field');
+      }
+    } catch (e) {
+      debugPrint('🩺 Error printing available types: $e');
     }
   }
   
   /// Initialize and request permissions
   Future<bool> requestPermissions() async {
+    // Default to offline mode if not connected
     try {
       debugPrint('🩺 Requesting HealthKit permissions...');
       
@@ -94,7 +99,7 @@ class HealthService {
   
   /// Get all health metrics for today
   Future<Map<String, dynamic>> getHealthMetricsToday() async {
-    // If in offline mode, return empty metrics
+    // If in offline mode, return empty metrics immediately
     if (AppSettings.offlineMode) {
       return {
         'steps': 0,
@@ -104,10 +109,20 @@ class HealthService {
       };
     }
     
-    final now = DateTime.now();
-    final midnight = DateTime(now.year, now.month, now.day);
-    
-    return getHealthMetricsBetween(midnight, now);
+    try {
+      final now = DateTime.now();
+      final midnight = DateTime(now.year, now.month, now.day);
+      
+      return getHealthMetricsBetween(midnight, now);
+    } catch (e) {
+      debugPrint('🩺 Error getting health metrics for today: $e');
+      return {
+        'steps': 0,
+        'flightsClimbed': 0,
+        'distanceWalkingRunning': 0.0,
+        'isOffline': true
+      };
+    }
   }
   
   /// Get all health metrics between two dates
@@ -126,75 +141,15 @@ class HealthService {
     }
     
     try {
-      // Check permissions and request if needed
-      var hasPermission = await hasPermissions();
-      if (!hasPermission) {
-        debugPrint('🩺 No health permissions, requesting...');
-        final granted = await requestPermissions();
-        if (!granted) {
-          debugPrint('🩺 Health permissions denied');
+      // Add a timeout to prevent blocking if Health is not available
+      return await Future.any([
+        _getHealthMetricsImpl(start, end, metrics),
+        Future.delayed(const Duration(seconds: 5), () {
+          debugPrint('🩺 Health data fetch timed out');
+          metrics['isOffline'] = true;
           return metrics;
-        }
-        
-        // Double-check permissions after request
-        hasPermission = await hasPermissions();
-        if (!hasPermission) {
-          debugPrint('🩺 Still no health permissions after request');
-          // Continue anyway as the data fetch might still work
-        }
-      }
-      
-      // Get steps using the specialized method for better accuracy
-      try {
-        final steps = await _health.getTotalStepsInInterval(start, end);
-        if (steps != null && steps > 0) {
-          metrics['steps'] = steps.toInt();
-          debugPrint('🩺 Steps from getTotalStepsInInterval: ${steps.toInt()}');
-        } else {
-          debugPrint('🩺 No steps returned from getTotalStepsInInterval');
-        }
-      } catch (e) {
-        debugPrint('🩺 Error getting total steps: $e - will try with individual data points');
-      }
-      
-      // Get all health data
-      debugPrint('🩺 Getting health data for period: ${start.toString()} to ${end.toString()}');
-      final data = await _health.getHealthDataFromTypes(start, end, _types);
-      
-      // Process each data point
-      int dataPointCount = 0;
-      for (var point in data) {
-        dataPointCount++;
-        debugPrint('🩺 Health data point: ${point.type}, ${point.value}');
-        if (point.value is NumericHealthValue) {
-          final numValue = point.value as NumericHealthValue;
-          final value = numValue.numericValue;
-          
-          switch (point.type) {
-            case HealthDataType.FLIGHTS_CLIMBED:
-              metrics['flightsClimbed'] += value.toInt();
-              break;
-            case HealthDataType.DISTANCE_WALKING_RUNNING:
-              metrics['distanceWalkingRunning'] += value;
-              break;
-            case HealthDataType.STEPS:
-              // Only use this if the specialized method failed
-              if (metrics['steps'] == 0) {
-                metrics['steps'] += value.toInt();
-              }
-              break;
-            default:
-              break;
-          }
-        }
-      }
-      
-      debugPrint('🩺 Processed $dataPointCount health data points');
-      debugPrint('🩺 Health metrics for period: $metrics');
-      
-      // Return the metrics, explicitly marking as not offline
-      metrics['isOffline'] = false;
-      return metrics;
+        }),
+      ]);
     } catch (e) {
       debugPrint('🩺 Error getting health metrics: $e');
       // On error, mark as offline but still return the empty metrics
@@ -203,40 +158,147 @@ class HealthService {
     }
   }
   
+  /// Implementation of health metrics fetching
+  Future<Map<String, dynamic>> _getHealthMetricsImpl(
+    DateTime start, 
+    DateTime end, 
+    Map<String, dynamic> metrics
+  ) async {
+    // Check permissions and request if needed
+    var hasPermission = await hasPermissions();
+    if (!hasPermission) {
+      debugPrint('🩺 No health permissions, requesting...');
+      final granted = await requestPermissions();
+      if (!granted) {
+        debugPrint('🩺 Health permissions denied');
+        metrics['isOffline'] = true;
+        return metrics;
+      }
+      
+      // Double-check permissions after request
+      hasPermission = await hasPermissions();
+      if (!hasPermission) {
+        debugPrint('🩺 Still no health permissions after request');
+        // Continue anyway as the data fetch might still work
+      }
+    }
+    
+    // Get steps using the specialized method for better accuracy
+    try {
+      final steps = await _health.getTotalStepsInInterval(start, end);
+      if (steps != null && steps > 0) {
+        metrics['steps'] = steps.toInt();
+        debugPrint('🩺 Steps from getTotalStepsInInterval: ${steps.toInt()}');
+      } else {
+        debugPrint('🩺 No steps returned from getTotalStepsInInterval');
+      }
+    } catch (e) {
+      debugPrint('🩺 Error getting total steps: $e - will try with individual data points');
+    }
+    
+    // Get all health data
+    debugPrint('🩺 Getting health data for period: ${start.toString()} to ${end.toString()}');
+    final data = await _health.getHealthDataFromTypes(start, end, _types);
+    
+    // Process each data point
+    int dataPointCount = 0;
+    for (var point in data) {
+      dataPointCount++;
+      debugPrint('🩺 Health data point: ${point.type}, ${point.value}');
+      if (point.value is NumericHealthValue) {
+        final numValue = point.value as NumericHealthValue;
+        final value = numValue.numericValue;
+        
+        switch (point.type) {
+          case HealthDataType.FLIGHTS_CLIMBED:
+            metrics['flightsClimbed'] += value.toInt();
+            break;
+          case HealthDataType.DISTANCE_WALKING_RUNNING:
+            metrics['distanceWalkingRunning'] += value;
+            break;
+          case HealthDataType.STEPS:
+            // Only use this if the specialized method failed
+            if (metrics['steps'] == 0) {
+              metrics['steps'] += value.toInt();
+            }
+            break;
+          default:
+            break;
+        }
+      }
+    }
+    
+    debugPrint('🩺 Processed $dataPointCount health data points');
+    debugPrint('🩺 Health metrics for period: $metrics');
+    
+    // Return the metrics, explicitly marking as not offline
+    metrics['isOffline'] = false;
+    return metrics;
+  }
+  
   /// Get steps for today
   Future<int> getStepsToday() async {
-    final metrics = await getHealthMetricsToday();
-    return metrics['steps'] as int;
+    if (AppSettings.offlineMode) return 0;
+    
+    try {
+      final metrics = await getHealthMetricsToday();
+      return metrics['steps'] as int;
+    } catch (e) {
+      debugPrint('🩺 Error getting steps for today: $e');
+      return 0;
+    }
   }
   
   /// Get steps for a specific date
   Future<int> getStepsForDate(DateTime date) async {
-    final startOfDay = DateTime(date.year, date.month, date.day);
-    final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59);
+    if (AppSettings.offlineMode) return 0;
     
-    final metrics = await getHealthMetricsBetween(startOfDay, endOfDay);
-    return metrics['steps'] as int;
+    try {
+      final startOfDay = DateTime(date.year, date.month, date.day);
+      final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59);
+      
+      final metrics = await getHealthMetricsBetween(startOfDay, endOfDay);
+      return metrics['steps'] as int;
+    } catch (e) {
+      debugPrint('🩺 Error getting steps for date: $e');
+      return 0;
+    }
   }
   
   /// Get steps between two dates (legacy method)
   Future<int> getStepsBetween(DateTime start, DateTime end) async {
-    final metrics = await getHealthMetricsBetween(start, end);
-    return metrics['steps'] as int;
+    if (AppSettings.offlineMode) return 0;
+    
+    try {
+      final metrics = await getHealthMetricsBetween(start, end);
+      return metrics['steps'] as int;
+    } catch (e) {
+      debugPrint('🩺 Error getting steps between dates: $e');
+      return 0;
+    }
   }
   
   /// Get steps for the past week
   Future<Map<DateTime, int>> getStepsForPastWeek() async {
-    final Map<DateTime, int> weeklySteps = {};
-    final now = DateTime.now();
+    if (AppSettings.offlineMode) {
+      return {};
+    }
     
-    // For each of the past 7 days
-    for (int i = 0; i < 7; i++) {
-      final date = now.subtract(Duration(days: i));
-      final steps = await getStepsForDate(date);
+    final Map<DateTime, int> weeklySteps = {};
+    try {
+      final now = DateTime.now();
       
-      // Store with date at midnight
-      final dayKey = DateTime(date.year, date.month, date.day);
-      weeklySteps[dayKey] = steps;
+      // For each of the past 7 days
+      for (int i = 0; i < 7; i++) {
+        final date = now.subtract(Duration(days: i));
+        final steps = await getStepsForDate(date);
+        
+        // Store with date at midnight
+        final dayKey = DateTime(date.year, date.month, date.day);
+        weeklySteps[dayKey] = steps;
+      }
+    } catch (e) {
+      debugPrint('🩺 Error getting steps for past week: $e');
     }
     
     return weeklySteps;
@@ -244,13 +306,27 @@ class HealthService {
   
   /// Get flights climbed for today
   Future<int> getFlightsClimbedToday() async {
-    final metrics = await getHealthMetricsToday();
-    return metrics['flightsClimbed'] as int;
+    if (AppSettings.offlineMode) return 0;
+    
+    try {
+      final metrics = await getHealthMetricsToday();
+      return metrics['flightsClimbed'] as int;
+    } catch (e) {
+      debugPrint('🩺 Error getting flights climbed: $e');
+      return 0;
+    }
   }
   
   /// Get walking/running distance for today in meters
   Future<double> getDistanceWalkingRunningToday() async {
-    final metrics = await getHealthMetricsToday();
-    return metrics['distanceWalkingRunning'] as double;
+    if (AppSettings.offlineMode) return 0.0;
+    
+    try {
+      final metrics = await getHealthMetricsToday();
+      return metrics['distanceWalkingRunning'] as double;
+    } catch (e) {
+      debugPrint('🩺 Error getting distance: $e');
+      return 0.0;
+    }
   }
 } 

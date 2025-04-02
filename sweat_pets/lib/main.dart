@@ -13,10 +13,20 @@ import 'package:sweat_pets/services/health_service.dart';
 import 'package:sweat_pets/services/app_settings.dart';
 
 void main() async {
+  // This ensures Flutter is initialized properly
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize app settings
-  await AppSettings.init();
+  // Set offline mode to true initially to ensure app works without Health data
+  try {
+    await AppSettings.init();
+    // If the app is being opened independently (not debugging), default to offline mode
+    if (!AppSettings.offlineMode) {
+      await AppSettings.setOfflineMode(true);
+    }
+  } catch (e) {
+    print('Error initializing app settings: $e');
+    // Continue anyway - we'll handle this gracefully
+  }
   
   // Load user profile with error handling
   UserProfile initialProfile;
@@ -28,9 +38,14 @@ void main() async {
   }
   
   // Set preferred orientations to portrait only for stability
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-  ]);
+  try {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+  } catch (e) {
+    print('Error setting orientation: $e');
+    // Continue anyway - this is not critical
+  }
   
   runApp(MyApp(initialProfile: initialProfile));
 }
@@ -47,6 +62,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'SweatPet',
+      debugShowCheckedModeBanner: false, // Remove debug banner
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.deepPurple,
@@ -87,23 +103,39 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
   }
   
   void _initializeAndNavigate() {
-    // Get the active pet state or create a default one
-    final activePetState = widget.initialProfile.activePetState ?? PetState.initial();
-    
-    // Initialize game
-    final game = SweatPetGame(initialState: activePetState);
-    final gameRef = GameReference(game);
-    
-    setState(() {
-      _showSplash = false;
-    });
-    
-    // Use Navigator to reduce the chance of build errors
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => InterfaceScreen(gameRef: gameRef),
-      ),
-    );
+    try {
+      // Get the active pet state or create a default one
+      final activePetState = widget.initialProfile.activePetState ?? PetState.initial();
+      
+      // Initialize game
+      final game = SweatPetGame(initialState: activePetState);
+      final gameRef = GameReference(game);
+      
+      setState(() {
+        _showSplash = false;
+      });
+      
+      // Use Navigator to reduce the chance of build errors
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => InterfaceScreen(gameRef: gameRef),
+        ),
+      );
+    } catch (e) {
+      print('Error navigating from splash: $e');
+      // If there's an error, still try to navigate to interface with a default state
+      final defaultState = PetState.initial();
+      final game = SweatPetGame(initialState: defaultState);
+      final gameRef = GameReference(game);
+      
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => InterfaceScreen(gameRef: gameRef),
+          ),
+        );
+      }
+    }
   }
   
   @override
